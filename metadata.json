@@ -1,0 +1,5 @@
+{
+  "name": "DGraphFin MLP Visualizer",
+  "description": "A visual explanation of the DGraphFin MLP node classification code, breaking down data processing, model architecture, and the training loop.",
+  "requestFramePermissions": []
+}
