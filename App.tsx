@@ -8,10 +8,12 @@ import { InferenceView } from './components/InferenceView';
 import { IntroView } from './components/IntroView';
 import { TcmView } from './components/TcmView';
 import { VisionView } from './components/VisionView';
+import StartPage from './components/StartPage';
 
 const App: React.FC = () => {
   const [currentProject, setCurrentProject] = useState<Project>(Project.DGRAPH);
   const [activeTab, setActiveTab] = useState<string>(TabView.INTRO);
+    const [showStart, setShowStart] = useState<boolean>(true);
 
   // Switch project handler
   const handleProjectSwitch = (p: Project) => {
@@ -23,6 +25,29 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
+        if (showStart) {
+            return (
+                <StartPage onSelect={(m) => {
+                    // module mapping:
+                    // 1 -> 金融异常检测 (DGraph project)
+                    // 2 -> TCM 中医大模型助手 (TCM project)
+                    // 3 -> Garbage 垃圾分类视觉模型 (Vision project)
+                    setShowStart(false);
+                    if (m === 1) {
+                        setCurrentProject(Project.DGRAPH);
+                        setActiveTab(TabView.INTRO);
+                    }
+                    if (m === 2) {
+                        setCurrentProject(Project.TCM);
+                        setActiveTab(TabView.TCM_INTRO);
+                    }
+                    if (m === 3) {
+                        setCurrentProject(Project.VISION);
+                        setActiveTab(TabView.CV_INTRO);
+                    }
+                }} onCancel={() => setShowStart(false)} />
+            );
+        }
     // 1. DGraph (Finance)
     if (currentProject === Project.DGRAPH) {
         switch (activeTab) {
