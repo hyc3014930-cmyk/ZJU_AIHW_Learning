@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Activity, Play, Pause, RotateCcw, FileCode, ChevronRight, BookOpen, Lightbulb, TrendingDown, TrendingUp } from 'lucide-react';
 
 export const TrainingView: React.FC = () => {
+  const TOTAL_EPOCHS = 5;
   const [epoch, setEpoch] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [step, setStep] = useState(0); 
@@ -9,21 +10,35 @@ export const TrainingView: React.FC = () => {
   const [acc, setAcc] = useState(0.5);
 
   useEffect(() => {
-    let interval: any;
-    if (isRunning && epoch < 200) {
-      interval = setInterval(() => {
-        setStep(prev => {
-            if (prev < 4) return prev + 1;
-            setEpoch(e => e + 1);
-            const progress = (epoch + 1) / 200;
-            setLoss(0.8 * Math.exp(-4 * progress) + 0.1 + (Math.random() * 0.05));
-            setAcc(0.5 + 0.45 * (1 - Math.exp(-3 * progress)));
-            return 1; 
+    if (!isRunning) return;
+
+    const interval = setInterval(() => {
+      setStep(prev => {
+        if (prev < 4) return prev + 1;
+
+        setEpoch(prevEpoch => {
+          const nextEpoch = Math.min(prevEpoch + 1, TOTAL_EPOCHS);
+          const progress = nextEpoch / TOTAL_EPOCHS;
+
+          // 使用更陡峭的指数曲线，在 5 个 epoch 内完成收敛
+          const easedLoss = 0.05 + 0.75 * Math.pow(1 - progress, 2.2);
+          const easedAcc = 0.5 + 0.48 * Math.pow(progress, 1.3);
+          setLoss(parseFloat(easedLoss.toFixed(4)));
+          setAcc(parseFloat(easedAcc.toFixed(3)));
+
+          if (nextEpoch === TOTAL_EPOCHS) {
+            setIsRunning(false);
+          }
+
+          return nextEpoch;
         });
-      }, 1500); 
-    }
+
+        return 1;
+      });
+    }, 1200);
+
     return () => clearInterval(interval);
-  }, [isRunning, epoch]);
+  }, [isRunning]);
 
   const handleReset = () => {
     setIsRunning(false);
@@ -34,11 +49,31 @@ export const TrainingView: React.FC = () => {
   };
 
   const stepDetails = {
-    0: { title: "Ready", desc: "Model initialized. Click Start.", concept: "Initial weights are random." },
-    1: { title: "1. Forward", desc: "out = model(data.x)", concept: "Calculate prediction." },
-    2: { title: "2. Loss", desc: "loss = nll_loss(out, y)", concept: "Compare with ground truth." },
-    3: { title: "3. Backward", desc: "loss.backward()", concept: "Calculate gradients (finding the error source)." },
-    4: { title: "4. Optimizer", desc: "opt.step()", concept: "Update weights based on gradients." }
+    0: { 
+      title: "准备阶段 Ready", 
+      desc: "初始化权重与优化器，等同于 jirong.py → model.reset_parameters() + Adam。",
+      concept: "所有参数尚未学习，Loss 很高，Accuracy 偶然命中。"
+    },
+    1: { 
+      title: "1. 前向传播 (Forward)", 
+      desc: "对应 jirong.py 中 train() 函数的 out = model(data.x[train_idx])。",
+      concept: "将节点特征送入 MLP，得到 logits。"
+    },
+    2: { 
+      title: "2. 计算损失 (Loss)", 
+      desc: "loss = F.nll_loss(out, data.y[train_idx]) —— 与脚本一致。",
+      concept: "衡量预测和标签差距，Loss 越小越好。"
+    },
+    3: { 
+      title: "3. 反向传播 (Backward)", 
+      desc: "loss.backward() 回传梯度，告诉每个参数该往哪走。",
+      concept: "梯度累计在优化器中等待更新。"
+    },
+    4: { 
+      title: "4. 参数更新 (Optimizer)", 
+      desc: "optimizer.step() + optimizer.zero_grad()，与 jirong.py 完全一致。",
+      concept: "Adam 用学习率 0.01 让权重快速下降，5 轮就收敛。"
+    }
   };
 
   const currentDetail = stepDetails[step as keyof typeof stepDetails];
@@ -108,6 +143,9 @@ export const TrainingView: React.FC = () => {
                     <div className="text-lg font-mono font-bold text-emerald-600">{(acc*100).toFixed(1)}%</div>
                 </div>
             </div>
+            <div className="text-[11px] text-slate-500 text-center italic">
+                * 为了演示效果，仅模拟 {TOTAL_EPOCHS} 次 epoch，Loss / Accuracy 都会在 5 步内快速收敛。
+            </div>
 
          </div>
 
@@ -115,17 +153,30 @@ export const TrainingView: React.FC = () => {
          <div className="h-[40vh] lg:h-auto lg:w-[450px] bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-700 flex flex-col flex-shrink-0 z-10 shadow-xl">
              <div className="p-3 border-b border-slate-800 bg-slate-900 flex items-center gap-2 text-slate-400 sticky top-0">
                 <FileCode size={14} />
-                <span className="text-xs font-bold">main.py</span>
+                <span className="text-xs font-bold">jirong.py</span>
              </div>
              
              <div className="flex-1 overflow-x-auto overflow-y-auto p-4 font-mono text-xs leading-loose relative custom-scrollbar whitespace-nowrap text-slate-400">
-                <code className="block text-yellow-200">def train(model, data, optimizer):</code>
+                <code className="block text-slate-500 mb-1"># 训练循环：与 jirong.py 完全一致</code>
+                <div className={`transition-colors ${step===0?'text-white bg-emerald-900/40 px-2 -mx-2 rounded':''}`}>
+                    model.reset_parameters()
+                </div>
+                <div className={`transition-colors ${step===0?'text-white bg-emerald-900/40 px-2 -mx-2 rounded':''}`}>
+                    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-7)
+                </div>
+                <code className="block text-yellow-200 mt-3">def train(model, data, train_idx, optimizer):</code>
                 <div className="pl-4 border-l border-slate-700 ml-1">
+                    <div className={`transition-colors ${step===0?'text-white bg-emerald-900/40 px-2 -mx-2 rounded':''}`}>
+                        model.train()
+                    </div>
+                    <div className={`transition-colors ${step===0?'text-white bg-emerald-900/40 px-2 -mx-2 rounded':''}`}>
+                        optimizer.zero_grad()
+                    </div>
                     <div className={`transition-colors ${step===1?'text-white bg-blue-900/50 px-2 -mx-2 rounded':''}`}>
-                        out = model(data.x)
+                        out = model(data.x[train_idx])
                     </div>
                     <div className={`transition-colors ${step===2?'text-white bg-rose-900/50 px-2 -mx-2 rounded':''}`}>
-                        loss = F.nll_loss(out, data.y)
+                        loss = F.nll_loss(out, data.y[train_idx])
                     </div>
                     <div className={`transition-colors ${step===3?'text-white bg-amber-900/50 px-2 -mx-2 rounded':''}`}>
                         loss.backward()
@@ -134,6 +185,13 @@ export const TrainingView: React.FC = () => {
                         optimizer.step()
                     </div>
                     <div>optimizer.zero_grad()</div>
+                </div>
+                <code className="block text-slate-500 mt-4"># 验证阶段 (test 函数节选)</code>
+                <div className="pl-4 border-l border-slate-700 ml-1">
+                    <code className="block text-slate-400">with torch.no_grad():</code>
+                    <code className="block text-slate-400 pl-4">model.eval()</code>
+                    <code className="block text-slate-400 pl-4">y_pred = out.exp()</code>
+                    <code className="block text-slate-400 pl-4">eval_results[key] = evaluator.eval(...)</code>
                 </div>
              </div>
          </div>

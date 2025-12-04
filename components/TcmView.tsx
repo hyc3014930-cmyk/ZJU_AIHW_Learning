@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare, FileJson, Sparkles, ArrowRight, BookOpen, ListVideo, Loader2, Terminal, Calculator, Clock, Play, Stethoscope, Quote, Scan, Check, RotateCcw } from 'lucide-react';
+import BatchProcessor from './BatchProcessor';
+import CodeHighlighter from './CodeHighlighter';
 
 export const TcmView: React.FC<{ activeSubTab: string }> = ({ activeSubTab }) => {
   // --- State for Prompt Lab ---
@@ -23,9 +25,37 @@ export const TcmView: React.FC<{ activeSubTab: string }> = ({ activeSubTab }) =>
     { id: 104, text: "心悸失眠，纳差便溏" },
   ];
 
+    const batchCode = [
+        "import time",
+        "import csv",
+        "",
+        "# 3. 批量处理循环",
+        "# 读取 CSV 数据",
+        "train_data = './datasets/train_data.csv'",
+        "symptoms_data = []",
+        "",
+        "with open(train_data, 'r', encoding='utf-8') as f:",
+        "    reader = csv.reader(f)",
+        "    header = next(reader)",
+        "    for row in reader:",
+        "        symptoms_data.append(row[1]) # 提取症状列",
+        "",
+        "# 遍历所有数据",
+        "for symptom in symptoms_data:",
+        "    # 调用大模型",
+    ].join('\n');
+
   // --- State for Eval Lab ---
   const [evalMode, setEvalMode] = useState<'calc' | 'space'>('calc'); 
   const [simScore, setSimScore] = useState<number | null>(null);
+  const [evalText1, setEvalText1] = useState("气血两虚");
+  const [evalText2, setEvalText2] = useState("气虚血亏");
+  const [isCalculating, setIsCalculating] = useState(false);
+  
+  // Reset simScore when mode changes
+  useEffect(() => {
+    setSimScore(null);
+  }, [evalMode]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -56,28 +86,48 @@ export const TcmView: React.FC<{ activeSubTab: string }> = ({ activeSubTab }) =>
       setActiveItem(-1);
       
       let currentIndex = 0;
+      let cancelled = false;
       
       const processNext = () => {
-          if (!isMounted.current) return;
-
-          if (currentIndex >= batchItems.length) {
-              setBatchStatus('finished');
-              setActiveItem(-1);
+          if (!isMounted.current || cancelled) {
+              clearTimers();
               return;
           }
 
-          setActiveItem(currentIndex);
+          if (currentIndex >= batchItems.length) {
+              if (isMounted.current) {
+                  setBatchStatus('finished');
+                  setActiveItem(-1);
+              }
+              return;
+          }
+
+          if (isMounted.current) {
+              setActiveItem(currentIndex);
+          }
 
           // Simulate API Call (Accelerated to 300ms)
           const t1 = setTimeout(() => {
-              if (!isMounted.current) return;
+              if (!isMounted.current || cancelled) {
+                  clearTimers();
+                  return;
+              }
               
-              setProcessedItems(prev => [...prev, currentIndex]);
+              if (isMounted.current) {
+                  setProcessedItems(prev => {
+                      if (prev.includes(currentIndex)) return prev;
+                      return [...prev, currentIndex];
+                  });
+              }
+              
               currentIndex++;
               
               // Rate Limit Sleep (200ms)
               const t2 = setTimeout(() => {
-                  if (!isMounted.current) return;
+                  if (!isMounted.current || cancelled) {
+                      clearTimers();
+                      return;
+                  }
                   processNext();
               }, 200); 
               timersRef.current.push(t2);
@@ -87,6 +137,12 @@ export const TcmView: React.FC<{ activeSubTab: string }> = ({ activeSubTab }) =>
       };
 
       processNext();
+      
+      // Store cancellation function
+      return () => {
+          cancelled = true;
+          clearTimers();
+      };
   };
 
   // Prompt Simulation (or Real Call if Backend exists)
@@ -315,11 +371,11 @@ def call_large_model(symptoms):
                         </button>
                         <button 
                             onClick={startBatchProcess} 
-                            disabled={batchStatus === 'running' || batchStatus === 'finished'}
-                            className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 rounded hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50"
+                            disabled={batchStatus === 'running'}
+                            className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 rounded hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            {batchStatus === 'running' ? <Loader2 size={14} className="animate-spin"/> : <Play size={14}/>}
-                            Start Batch
+                            {batchStatus === 'running' ? <Loader2 size={14} className="animate-spin"/> : batchStatus === 'finished' ? <Check size={14}/> : <Play size={14}/>}
+                            {batchStatus === 'running' ? 'Processing...' : batchStatus === 'finished' ? 'Completed' : 'Start Batch'}
                         </button>
                     </div>
                 </div>
@@ -331,28 +387,44 @@ def call_large_model(symptoms):
                     
                     <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-24 border-x-2 border-emerald-400/30 bg-emerald-100/20 z-0 flex flex-col justify-center items-center">
                          <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-white/80 px-2 py-1 rounded">API Limit</div>
-                         {activeItem > -1 && <Clock className="text-emerald-500 animate-pulse mt-2" size={20}/>}
+                         {activeItem > -1 && batchStatus === 'running' && <Clock className="text-emerald-500 animate-pulse mt-2" size={20}/>}
                     </div>
 
                     <div className="flex gap-4 w-full justify-center relative z-10">
                         {batchItems.map((item, i) => {
+                            const isProcessed = processedItems.includes(i);
+                            const isActive = i === activeItem && batchStatus === 'running';
+                            
                             let stateClass = "bg-white border-slate-300 text-slate-600";
                             let transClass = "";
                             
-                            if (processedItems.includes(i)) {
-                                stateClass = "bg-emerald-500 border-emerald-600 text-white opacity-0"; 
-                                transClass = "translate-x-[200px]";
-                            } else if (i === activeItem) {
+                            if (isProcessed) {
+                                // 已处理的项目保持可见，显示为完成状态
+                                stateClass = "bg-emerald-500 border-emerald-600 text-white"; 
+                                transClass = "opacity-90 scale-100";
+                            } else if (isActive) {
+                                // 正在处理的项目高亮显示
                                 stateClass = "bg-blue-600 border-blue-700 text-white shadow-lg scale-110 z-20";
                             }
 
                             return (
-                                <div key={item.id} className={`w-24 h-32 rounded-lg border-2 p-2 flex flex-col transition-all duration-300 ${stateClass} ${transClass}`}>
+                                <div 
+                                    key={item.id} 
+                                    className={`w-24 h-32 rounded-lg border-2 p-2 flex flex-col transition-all duration-300 ${stateClass} ${transClass}`}
+                                    style={{ 
+                                        pointerEvents: 'none'
+                                    }}
+                                >
                                     <div className="text-[10px] opacity-70 mb-1">#{item.id}</div>
                                     <div className="text-[10px] font-bold leading-tight line-clamp-3 flex-1">{item.text}</div>
                                     <div className="text-[9px] font-mono pt-2 border-t border-white/20 mt-1">
-                                        {processedItems.includes(i) ? 'DONE' : (i === activeItem ? 'API...' : 'WAIT')}
+                                        {isProcessed ? 'DONE' : (isActive ? 'API...' : 'WAIT')}
                                     </div>
+                                    {isProcessed && (
+                                        <div className="absolute top-1 right-1">
+                                            <Check size={12} className="text-white"/>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -364,15 +436,24 @@ def call_large_model(symptoms):
                     {batchStatus === 'idle' && <div className="text-slate-500">Ready to start...</div>}
                     {processedItems.map(idx => (
                         <div key={idx} className="text-emerald-400 mb-1 flex gap-2">
-                             <Check size={12} className="mt-0.5"/> Saved result for ID {batchItems[idx].id}
+                             <Check size={12} className="mt-0.5 flex-shrink-0"/> Saved result for ID {batchItems[idx].id}
                         </div>
                     ))}
-                    {activeItem > -1 && (
+                    {activeItem > -1 && batchStatus === 'running' && (
                         <div className="text-amber-400 animate-pulse flex gap-2">
-                            <Loader2 size={12} className="animate-spin mt-0.5"/> Processing ID {batchItems[activeItem].id}... (Sleep 0.2s)
+                            <Loader2 size={12} className="animate-spin mt-0.5 flex-shrink-0"/> Processing ID {batchItems[activeItem].id}... (Sleep 0.2s)
                         </div>
                     )}
-                    {batchStatus === 'finished' && <div className="text-blue-400 mt-2">[INFO] Batch job completed successfully.</div>}
+                    {batchStatus === 'finished' && (
+                        <div className="text-blue-400 mt-2 flex items-center gap-2">
+                            <Check size={14} className="flex-shrink-0"/> [INFO] Batch job completed successfully. All {batchItems.length} items processed.
+                        </div>
+                    )}
+                </div>
+                
+                {/* 新的重构批量处理示例（安全版） */}
+                <div className="w-full max-w-3xl mt-6">
+                    <BatchProcessor items={batchItems} onComplete={() => { /* placeholder for integrated save */ }} />
                 </div>
             </div>
         </div>
@@ -420,6 +501,14 @@ print("Batch processing complete.")
     </div>
   );
 
+  const handleCalculate = () => {
+      setIsCalculating(true);
+      setTimeout(() => {
+          setSimScore(0.92);
+          setIsCalculating(false);
+      }, 1500);
+  };
+
   const renderEval = () => (
     <div className="h-full flex flex-col lg:flex-row animate-fade-in-up overflow-hidden">
         <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
@@ -430,50 +519,123 @@ print("Batch processing complete.")
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 lg:p-8">
-                <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="flex border-b border-slate-100">
-                        <button onClick={() => setEvalMode('calc')} className={`flex-1 py-3 text-xs font-bold ${evalMode==='calc'?'bg-emerald-50 text-emerald-600 border-b-2 border-emerald-500':'text-slate-500'}`}>Cosine Similarity</button>
-                        <button onClick={() => setEvalMode('space')} className={`flex-1 py-3 text-xs font-bold ${evalMode==='space'?'bg-purple-50 text-purple-600 border-b-2 border-purple-500':'text-slate-500'}`}>Embedding Space</button>
-                    </div>
+                <div className="max-w-4xl mx-auto space-y-6">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="flex border-b border-slate-100">
+                            <button onClick={() => setEvalMode('calc')} className={`flex-1 py-3 text-xs font-bold transition-colors ${evalMode==='calc'?'bg-emerald-50 text-emerald-600 border-b-2 border-emerald-500':'text-slate-500 hover:bg-slate-50'}`}>Cosine Similarity</button>
+                            <button onClick={() => setEvalMode('space')} className={`flex-1 py-3 text-xs font-bold transition-colors ${evalMode==='space'?'bg-purple-50 text-purple-600 border-b-2 border-purple-500':'text-slate-500 hover:bg-slate-50'}`}>Embedding Space</button>
+                        </div>
 
-                    <div className="p-8 h-80 flex items-center justify-center">
-                        {evalMode === 'calc' ? (
-                            <div className="w-full max-w-md space-y-6">
-                                <div className="flex justify-between items-center text-xs">
-                                    <div className="bg-emerald-100 text-emerald-800 px-3 py-2 rounded">Pred: "气血两虚"</div>
-                                    <div className="font-mono text-slate-400">VS</div>
-                                    <div className="bg-blue-100 text-blue-800 px-3 py-2 rounded">Truth: "气虚血亏"</div>
-                                </div>
-                                <button 
-                                    onClick={() => setSimScore(0.92)}
-                                    className="w-full bg-slate-900 text-white py-2 rounded hover:bg-slate-800 transition-colors text-xs font-bold"
-                                >
-                                    Calculate Similarity
-                                </button>
-                                {simScore && (
-                                    <div className="text-center animate-bounce">
-                                        <div className="text-4xl font-black text-slate-800">{(simScore*100).toFixed(0)}%</div>
-                                        <div className="text-xs text-emerald-500 font-bold mt-1">High Similarity</div>
+                        <div className="p-8">
+                            {evalMode === 'calc' ? (
+                                <div className="w-full max-w-2xl mx-auto space-y-6">
+                                    {/* Input Fields */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 mb-2 block">预测值 (Prediction)</label>
+                                            <input 
+                                                type="text"
+                                                value={evalText1}
+                                                onChange={(e) => setEvalText1(e.target.value)}
+                                                className="w-full bg-emerald-50 border border-emerald-200 rounded px-3 py-2 text-sm text-emerald-800 focus:ring-2 focus:ring-emerald-500 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 mb-2 block">真实值 (Ground Truth)</label>
+                                            <input 
+                                                type="text"
+                                                value={evalText2}
+                                                onChange={(e) => setEvalText2(e.target.value)}
+                                                className="w-full bg-blue-50 border border-blue-200 rounded px-3 py-2 text-sm text-blue-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                        </div>
                                     </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="relative w-64 h-64 bg-slate-50 border border-slate-200 rounded-lg">
-                                <div className="absolute bottom-4 left-4 text-[10px] text-slate-400">0,0</div>
-                                <svg className="w-full h-full absolute inset-0">
-                                    <line x1="10%" y1="90%" x2="60%" y2="20%" stroke="#10b981" strokeWidth="2" markerEnd="url(#arrow)"/>
-                                    <line x1="10%" y1="90%" x2="65%" y2="25%" stroke="#3b82f6" strokeWidth="2" markerEnd="url(#arrow)"/>
-                                    <path d="M 50 150 Q 60 140 55 130" fill="none" stroke="#94a3b8" strokeDasharray="2"/>
-                                    <defs>
-                                        <marker id="arrow" markerWidth="4" markerHeight="4" refX="0" refY="2" orient="auto">
-                                            <path d="M0,0 V4 L4,2 Z" fill="currentColor"/>
-                                        </marker>
-                                    </defs>
-                                </svg>
-                                <div className="absolute top-[20%] right-[30%] text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded">Pred</div>
-                                <div className="absolute top-[25%] right-[25%] text-[9px] bg-blue-100 text-blue-800 px-1 rounded">Truth</div>
-                            </div>
-                        )}
+
+                                    {/* Formula Visualization */}
+                                    <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                        <div className="text-xs font-bold text-slate-500 mb-2">余弦相似度公式</div>
+                                        <div className="text-center font-mono text-sm text-slate-700">
+                                            <div>cos(θ) = <span className="text-emerald-600">A · B</span> / (<span className="text-blue-600">||A|| × ||B||</span>)</div>
+                                        </div>
+                                        <div className="text-[10px] text-slate-400 mt-2 text-center">
+                                            A 和 B 是 1024 维的 Embedding 向量
+                                        </div>
+                                    </div>
+
+                                    {/* Calculate Button */}
+                                    <button 
+                                        onClick={handleCalculate}
+                                        disabled={isCalculating || !evalText1.trim() || !evalText2.trim()}
+                                        className="w-full bg-slate-900 text-white py-3 rounded-lg hover:bg-slate-800 transition-colors text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isCalculating ? (
+                                            <>
+                                                <Loader2 size={16} className="animate-spin"/> 计算中...
+                                            </>
+                                        ) : (
+                                            'Calculate Similarity'
+                                        )}
+                                    </button>
+
+                                    {/* Result */}
+                                    {simScore !== null && (
+                                        <div className="text-center space-y-2 animate-fade-in-up">
+                                            <div className="text-5xl font-black text-slate-800">{(simScore*100).toFixed(1)}%</div>
+                                            <div className={`text-sm font-bold ${simScore > 0.8 ? 'text-emerald-500' : simScore > 0.5 ? 'text-amber-500' : 'text-rose-500'}`}>
+                                                {simScore > 0.8 ? 'High Similarity' : simScore > 0.5 ? 'Medium Similarity' : 'Low Similarity'}
+                                            </div>
+                                            <div className="text-xs text-slate-500 mt-2">
+                                                两个文本在语义空间中非常接近
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="space-y-6">
+                                    <div className="relative w-full h-80 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
+                                        <div className="absolute bottom-4 left-4 text-[10px] text-slate-400">原点 (0,0)</div>
+                                        <svg className="w-full h-full absolute inset-0">
+                                            {/* Grid */}
+                                            <defs>
+                                                <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                                                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="0.5"/>
+                                                </pattern>
+                                                <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                                                    <path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8"/>
+                                                </marker>
+                                            </defs>
+                                            <rect width="100%" height="100%" fill="url(#grid)" />
+                                            
+                                            {/* Vectors */}
+                                            <line x1="10%" y1="80%" x2="60%" y2="20%" stroke="#10b981" strokeWidth="3" markerEnd="url(#arrow)"/>
+                                            <line x1="10%" y1="80%" x2="65%" y2="25%" stroke="#3b82f6" strokeWidth="3" markerEnd="url(#arrow)"/>
+                                            
+                                            {/* Angle Arc */}
+                                            <path d="M 10% 80% Q 40% 50% 60% 20%" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="4,2" opacity="0.6"/>
+                                            
+                                            {/* Points */}
+                                            <circle cx="60%" cy="20%" r="4" fill="#10b981"/>
+                                            <circle cx="65%" cy="25%" r="4" fill="#3b82f6"/>
+                                        </svg>
+                                        <div className="absolute top-[20%] right-[30%] text-[10px] bg-emerald-100 text-emerald-800 px-2 py-1 rounded border border-emerald-200 font-bold">Pred Vector</div>
+                                        <div className="absolute top-[25%] right-[25%] text-[10px] bg-blue-100 text-blue-800 px-2 py-1 rounded border border-blue-200 font-bold">Truth Vector</div>
+                                        <div className="absolute bottom-4 right-4 text-[10px] text-slate-500 bg-white/80 px-2 py-1 rounded border border-slate-200">
+                                            θ = {simScore ? Math.acos(simScore) * 180 / Math.PI : 0}°
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                                        <h4 className="font-bold text-purple-800 mb-2 text-sm">Embedding 空间解释</h4>
+                                        <div className="text-xs text-purple-700 space-y-1">
+                                            <p>• 每个文本被转换为 1024 维向量（Embedding）</p>
+                                            <p>• 语义相似的文本在空间中距离更近</p>
+                                            <p>• 余弦相似度衡量两个向量的夹角，范围 [-1, 1]</p>
+                                            <p>• 值越接近 1，表示语义越相似</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -486,59 +648,121 @@ print("Batch processing complete.")
                 <span className="text-xs font-bold">Source Code</span>
              </div>
              <div className="flex-1 overflow-x-auto overflow-y-auto p-4 font-mono text-xs leading-relaxed text-slate-300 whitespace-pre custom-scrollbar">
-{`from sklearn.metrics.pairwise import cosine_similarity
+{`import json
+import requests
 import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
-# 4. 获取 Embedding 并计算相似度
-
+# 1. 获取文本的 Embedding 向量
 def get_embedding(text):
     """
-    调用 Embeddings API 将文本转化为向量
+    调用百度千帆 Embeddings API
+    将文本转化为 1024 维向量
     """
     url = "https://qianfan.baidubce.com/v2/embeddings"
     payload = json.dumps({
-        "model": "bge-large-zh",
+        "model": "bge-large-zh",  # 中文 Embedding 模型
         "input": [text]
     })
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer YOUR_API_KEY'
+    }
     
     try:
-        response = requests.post(url, headers=headers, data=payload)
+        response = requests.post(
+            url, 
+            headers=headers, 
+            data=payload, 
+            timeout=10
+        )
+        response.raise_for_status()
         data = response.json()
-        # 返回 1024 维度的向量列表
+        # 返回 1024 维度的向量
         return data['data'][0]['embedding']
     except Exception as e:
-        print("Embedding Error")
-        return [0.0] * 1024
+        print(f"Embedding API error: {str(e)}")
+        return [0.0] * 1024  # 错误时返回零向量
 
+# 2. 计算余弦相似度
 def calculate_similarity(text1, text2):
     """
     计算两个文本的余弦相似度
+    
+    公式: cos(θ) = (A · B) / (||A|| × ||B||)
+    
+    返回值: [-1, 1]
+    - 1: 完全相同
+    - 0: 正交（无关）
+    - -1: 完全相反
     """
     if not text1.strip() or not text2.strip():
         return 0.0
         
+    # 获取 Embedding
     emb1 = get_embedding(text1)
     emb2 = get_embedding(text2)
     
-    # Cosine Similarity Formula: (A . B) / (||A|| * ||B||)
-    sim = cosine_similarity(
-        np.array(emb1).reshape(1, -1),
-        np.array(emb2).reshape(1, -1)
-    )
+    # 转换为 numpy 数组并 reshape
+    # cosine_similarity 需要 (n_samples, n_features) 格式
+    emb1_arr = np.array(emb1).reshape(1, -1)
+    emb2_arr = np.array(emb2).reshape(1, -1)
+    
+    # 计算余弦相似度
+    sim = cosine_similarity(emb1_arr, emb2_arr)
+    
+    # 返回标量值
     return float(sim[0][0])
 
-def score(predict_zx, predict_zf):
+# 3. 批量评估并计算最终分数
+def score(predict_zx, predict_zf, ZX, ZF):
     """
-    最终打分逻辑
+    对预测结果进行评分
+    
+    Args:
+        predict_zx: 预测的证型列表
+        predict_zf: 预测的治法列表
+        ZX: 真实的证型列表
+        ZF: 真实的治法列表
+    
+    Returns:
+        最终分数 (0-100)
     """
-    scores = []
+    ZX_scores = []
+    ZF_scores = []
+    
     for i in range(len(predict_zx)):
-        # 综合计算证型和治法的相似度
-        sim_x = calculate_similarity(predict_zx[i], ZX[i])
-        sim_f = calculate_similarity(predict_zf[i], ZF[i])
-        scores.append((sim_x + sim_f) / 2)
+        # 计算证型相似度
+        zheng_xing_pred = predict_zx[i].strip()
+        zheng_xing_true = ZX[i].strip()
+        sim_x = calculate_similarity(
+            zheng_xing_pred, 
+            zheng_xing_true
+        )
         
-    return np.mean(scores) * 100
+        # 计算治法相似度
+        zhi_fa_pred = predict_zf[i].strip()
+        zhi_fa_true = ZF[i].strip()
+        sim_f = calculate_similarity(
+            zhi_fa_pred, 
+            zhi_fa_true
+        )
+        
+        ZX_scores.append(sim_x)
+        ZF_scores.append(sim_f)
+    
+    # 计算平均相似度并转换为百分制
+    zx_mean = np.mean(ZX_scores) if ZX_scores else 0.0
+    zf_mean = np.mean(ZF_scores) if ZF_scores else 0.0
+    
+    # 综合证型和治法的相似度
+    final_score = ((zx_mean + zf_mean) / 2) * 100
+    
+    return final_score
+
+# 使用示例
+final_score = score(predict_zx, predict_zf, ZX, ZF)
+print(f"Final Score: {final_score:.2f}")
 `}
              </div>
         </div>

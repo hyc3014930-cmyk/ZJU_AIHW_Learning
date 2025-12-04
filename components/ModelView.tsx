@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CodeHighlighter from './CodeHighlighter';
 import { Layers, Zap, Code2, Calculator, MousePointer2, TrendingDown, Activity } from 'lucide-react';
 
 export const ModelView: React.FC = () => {
@@ -172,65 +173,78 @@ export const ModelView: React.FC = () => {
               </button>
            </div>
 
-           {activeTab === 'code' ? (
+            {activeTab === 'code' ? (
               <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                 <pre className="font-mono text-xs leading-relaxed space-y-1">
-                    <code className="block text-slate-500 mb-2">import torch.nn as nn</code>
-                    <code className="block text-purple-400">class MLP(torch.nn.Module):</code>
-                    <div className="pl-4 border-l border-slate-800 ml-1">
-                        <code className="block text-slate-500 mb-1"># 初始化：定义模型的各个层</code>
-                        <code className="block text-yellow-200">def __init__(self, in_channels, hidden_channels, out_channels, ...):</code>
-                        <div className="pl-4">
-                            <code className="block text-blue-300">super(MLP, self).__init__()</code>
-                            
-                            <div className={`transition-all duration-300 ${hoveredPart === 'linear1' || hoveredPart === 'linear2' ? 'bg-indigo-900/50 -mx-4 px-4 py-1' : ''}`}>
-                                <code className="block text-slate-500 mt-2"># ModuleList 像一个会自动注册参数的列表</code>
-                                <code className="block text-blue-300">self.lins = torch.nn.ModuleList()</code>
-                            </div>
+                {/* Use CodeHighlighter and map hoveredPart -> lines to highlight */}
+                {(() => {
+                  const codeLines = [
+                    'import torch.nn as nn',
+                    '',
+                    'class MLP(torch.nn.Module):',
+                    '    # 初始化：定义模型的各个层',
+                    '    def __init__(self, in_channels, hidden_channels, out_channels, ...):',
+                    '        super(MLP, self).__init__()',
+                    '        # ModuleList 自动注册参数',
+                    '        self.lins = torch.nn.ModuleList()',
+                    '        # 第一层：输入 -> 隐藏',
+                    '        self.lins.append(torch.nn.Linear(in_channels, hidden_channels))',
+                    '        # 中间隐藏层',
+                    '        for _ in range(num_layers - 2):',
+                    '            self.lins.append(...)',
+                    '        # 最后一层：隐藏 -> 输出',
+                    '        self.lins.append(torch.nn.Linear(hidden_channels, out_channels))',
+                    '        self.dropout = dropout',
+                    '',
+                    '    # 前向传播',
+                    '    def forward(self, x):',
+                    '        for i, lin in enumerate(self.lins[:-1]):',
+                    '            x = lin(x)',
+                    '            # 激活函数：增加非线性',
+                    '            x = F.relu(x)',
+                    '            x = F.dropout(x, p=self.dropout, ...)',
+                    '        # 最后一层不需要 ReLU',
+                    '        x = self.lins[-1](x)',
+                    '        # 输出 Log 概率',
+                    '        return F.log_softmax(x, dim=-1)'
+                  ].join('\n');
 
-                            <div className={`transition-all duration-300 ${hoveredPart === 'linear1' ? 'bg-indigo-900/50 -mx-4 px-4 py-1 border-l-2 border-indigo-400' : ''}`}>
-                                <code className="block text-slate-500 mt-1"># 第一层：输入 {'->'} 隐藏</code>
-                                <code className="block text-blue-300">self.lins.append(torch.nn.Linear(in_channels, hidden_channels))</code>
-                            </div>
+                           const mapHoveredToLines = (part: string | null) => {
+                              switch (part) {
+                               case 'linear1': return [10,11]; // init first layer
+                               case 'linear2': return [14,15,25]; // last layer and forward usage
+                               case 'relu': return [22,23]; // activation lines
+                               case 'output': return [26,27]; // return
+                               default: return [];
+                              }
+                           };
 
-                            <div className={`transition-all duration-300 ${hoveredPart === 'linear2' ? 'bg-indigo-900/50 -mx-4 px-4 py-1 border-l-2 border-indigo-400' : ''}`}>
-                                <code className="block text-slate-500 mt-1"># 隐藏层 {'->'} 隐藏层 (如果有更多层)</code>
-                                <code className="block text-blue-300">for _ in range(num_layers - 2):</code>
-                                <code className="block text-blue-300 pl-4">self.lins.append(...)</code>
+                                             const modelTooltips: Record<number,string> = {
+                                                 10: '第一层：输入到隐藏层的线性变换',
+                                                 11: '向隐藏通道投影',
+                                                 14: '最后一层：隐藏到输出',
+                                                 22: '在前向传播中使用 ReLU 激活函数增加非线性',
+                                                 23: '可选的 Dropout 用于防止过拟合',
+                                                 26: '最终输出并计算 Log Softmax 概率',
+                                             };
 
-                                <code className="block text-slate-500 mt-1"># 最后一层：隐藏 {'->'} 输出 (分类数)</code>
-                                <code className="block text-blue-300">self.lins.append(torch.nn.Linear(hidden_channels, out_channels))</code>
-                            </div>
-                            
-                            <code className="block text-blue-300 mt-2">self.dropout = dropout</code>
-                        </div>
+                                             // Build a highlightedMap so different parts use different colors
+                                             const part = hoveredPart;
+                                             const highlightedMap: Record<number,string> = {};
+                                             if (part === 'linear1') {
+                                                mapHoveredToLines('linear1').forEach(l => highlightedMap[l] = 'indigo');
+                                             }
+                                             if (part === 'linear2') {
+                                                mapHoveredToLines('linear2').forEach(l => highlightedMap[l] = 'cyan');
+                                             }
+                                             if (part === 'relu') {
+                                                mapHoveredToLines('relu').forEach(l => highlightedMap[l] = 'purple');
+                                             }
+                                             if (part === 'output') {
+                                                mapHoveredToLines('output').forEach(l => highlightedMap[l] = 'emerald');
+                                             }
 
-                        <code className="block text-slate-500 mt-4 mb-1"># 前向传播：定义数据流动的路径</code>
-                        <code className="block text-yellow-200">def forward(self, x):</code>
-                        <div className="pl-4">
-                            <div className={`transition-all duration-300 ${hoveredPart === 'linear1' ? 'bg-indigo-900/50 -mx-4 px-4 py-1 border-l-2 border-indigo-400' : ''}`}>
-                                <code className="block text-blue-300">for i, lin in enumerate(self.lins[:-1]):</code>
-                                <code className="block text-blue-300 pl-4">x = lin(x)</code>
-                            </div>
-                            
-                            <div className={`transition-all duration-300 ${hoveredPart === 'relu' ? 'bg-purple-900/50 -mx-4 px-4 py-1 border-l-2 border-purple-400' : ''}`}>
-                                <code className="block text-slate-500 pl-4 mt-1"># 激活函数：增加非线性</code>
-                                <code className="block text-purple-300 pl-4">x = F.relu(x)</code>
-                                <code className="block text-purple-300 pl-4">x = F.dropout(x, p=self.dropout, ...)</code>
-                            </div>
-                            
-                            <div className={`transition-all duration-300 ${hoveredPart === 'linear2' ? 'bg-indigo-900/50 -mx-4 px-4 py-1 border-l-2 border-indigo-400' : ''}`}>
-                                <code className="block text-slate-500 mt-1"># 最后一层不需要 ReLU</code>
-                                <code className="block text-blue-300">x = self.lins[-1](x)</code>
-                            </div>
-
-                            <div className={`transition-all duration-300 ${hoveredPart === 'output' ? 'bg-emerald-900/50 -mx-4 px-4 py-1 border-l-2 border-emerald-400' : ''}`}>
-                                <code className="block text-slate-500 mt-1"># 输出 Log 概率</code>
-                                <code className="block text-emerald-300">return F.log_softmax(x, dim=-1)</code>
-                            </div>
-                        </div>
-                    </div>
-                 </pre>
+                                             return <CodeHighlighter code={codeLines} highlightedMap={highlightedMap} lineTooltips={modelTooltips} dark={true} />;
+                })()}
               </div>
            ) : (
               <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-slate-900">
@@ -273,27 +287,17 @@ export const ModelView: React.FC = () => {
                         
                         {/* Graph Line */}
                         <svg className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                            {/* ReLU Function: Flat from x=0 to 50%, then linear up to 100%,0% */}
+                            {/* ReLU Function: y = max(0, x) */}
                             {/* 
                                 Viewport mapping:
                                 X: 0% -> -10, 50% -> 0, 100% -> 10
                                 Y: Bottom 20px (0), Top 0px (10)
-                                Line Segment 1: x=0% to x=50%, y = bottom 20px (Val 0)
-                                Line Segment 2: x=50% to x=100%, y goes from bottom 20px to top 0px
+                                Line Segment 1: x=0% to x=50%, y = bottom 20px (Val 0) - 水平线
+                                Line Segment 2: x=50% to x=100%, y goes from bottom 20px to top 0px - 斜线
                             */}
-                            <polyline 
-                                points="0,140 160,140 320,0" 
-                                fill="none" 
-                                stroke="#a855f7" 
-                                strokeWidth="2" 
-                                vectorEffect="non-scaling-stroke" 
-                                className="w-full h-full"
-                            />
-                            {/* Note: SVG coordinates can be tricky with responsive width. 
-                                Using a safer 2-line approach with percentages. 
-                                The container height is h-40 (160px). Bottom 20px is y=140. Top is y=0.
-                            */}
+                            {/* 水平部分：x < 0 时，y = 0 */}
                             <line x1="0%" y1="calc(100% - 20px)" x2="50%" y2="calc(100% - 20px)" stroke="#a855f7" strokeWidth="2" />
+                            {/* 斜线部分：x >= 0 时，y = x */}
                             <line x1="50%" y1="calc(100% - 20px)" x2="100%" y2="0%" stroke="#a855f7" strokeWidth="2" />
                         </svg>
 
